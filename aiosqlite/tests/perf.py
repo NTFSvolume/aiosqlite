@@ -4,11 +4,11 @@
 """
 Simple perf tests for aiosqlite and the asyncio run loop.
 """
+
 import sqlite3
 import string
 import tempfile
 import time
-
 from unittest import IsolatedAsyncioTestCase as TestCase
 
 import aiosqlite
