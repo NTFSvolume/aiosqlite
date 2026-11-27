@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import sqlite3
@@ -163,17 +164,24 @@ class Connection:
         self._tx.put_nowait((future, close_and_stop))
         return future
 
-    async def _connect(self) -> Self:
+    @deprecated(
+        "Please use 'async with' to make sure the connection is closed properly"
+    )
+    def __await__(self) -> Generator[Any, None, Self]:
+        return self.__aenter__().__await__()
+
+    async def __aenter__(self) -> Self:
         """Connect to the actual sqlite database."""
         if self._connection is None:
+
+            def connector() -> None:
+                # Keep ownership on the worker even if the awaiting task is cancelled.
+                self._connection = self._connector()
+
+            future = asyncio.get_event_loop().create_future()
+            self._tx.put_nowait((future, connector))
+
             try:
-
-                def connector() -> None:
-                    # Keep ownership on the worker even if the awaiting task is cancelled.
-                    self._connection = self._connector()
-
-                future = asyncio.get_event_loop().create_future()
-                self._tx.put_nowait((future, connector))
                 self._thread.start()
                 await future
             except BaseException:
@@ -181,15 +189,6 @@ class Connection:
                 raise
 
         return self
-
-    @deprecated(
-        "Please use 'async with' to make sure the connection is closed properly"
-    )
-    def __await__(self) -> Generator[Any, None, Self]:
-        return self._connect().__await__()
-
-    async def __aenter__(self) -> Self:
-        return await self._connect()
 
     async def __aexit__(
         self,
@@ -243,13 +242,12 @@ class Connection:
         return await future
 
     def _execute_insert(self, sql: str, parameters: Parameters) -> sqlite3.Row | None:
-        cursor = self._conn.execute(sql, parameters)
-        cursor.execute("SELECT last_insert_rowid()")
-        return cursor.fetchone()
+        with contextlib.closing(self._conn.execute(sql, parameters)) as cursor:
+            return cursor.execute("SELECT last_insert_rowid()").fetchone()
 
     def _execute_fetchall(self, sql: str, parameters: Parameters) -> list[sqlite3.Row]:
-        cursor = self._conn.execute(sql, parameters)
-        return cursor.fetchall()
+        with contextlib.closing(self._conn.execute(sql, parameters)) as cursor:
+            return cursor.fetchall()
 
     @contextmanager
     async def cursor(self) -> Cursor:
