@@ -33,16 +33,20 @@ class Cursor:
         return await self._conn._execute(fn, *args, **kwargs)
 
     async def execute(
-        self, sql: str, parameters: Iterable[Any] | None = None,
+        self,
+        sql: str,
+        parameters: Iterable[Any] | None = None,
     ) -> Cursor:
         """Execute the given query."""
         if parameters is None:
-            parameters = []
+            parameters = ()
         await self._execute(self._cursor.execute, sql, parameters)
         return self
 
     async def executemany(
-        self, sql: str, parameters: Iterable[Iterable[Any]],
+        self,
+        sql: str,
+        parameters: Iterable[Iterable[Any]],
     ) -> Cursor:
         """Execute the given multiquery."""
         await self._execute(self._cursor.executemany, sql, parameters)

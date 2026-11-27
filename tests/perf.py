@@ -1,8 +1,7 @@
 # Copyright Amethyst Reese
 # Licensed under the MIT license
 
-"""Simple perf tests for aiosqlite and the asyncio run loop.
-"""
+"""Simple perf tests for aiosqlite and the asyncio run loop."""
 
 import sqlite3
 import string
@@ -49,7 +48,7 @@ def timed(fn, name=None):
             except StopAsyncIteration:
                 break
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"exception occurred: {e}")
                 return
 
