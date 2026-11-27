@@ -1,35 +1,31 @@
 # Copyright Amethyst Reese
 # Licensed under the MIT license
 
+from __future__ import annotations
 
-from collections.abc import Coroutine, Generator
+import functools
+from collections.abc import Callable, Coroutine, Generator
 from contextlib import AbstractAsyncContextManager
-from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import Any, ParamSpec, TypeVar
 
 from .cursor import Cursor
 
 _T = TypeVar("_T")
+_P = ParamSpec("_P")
 
 
 class Result(AbstractAsyncContextManager[_T], Coroutine[Any, Any, _T]):
     __slots__ = ("_coro", "_obj")
 
-    def __init__(self, coro: Coroutine[Any, Any, _T]):
-        self._coro = coro
+    def __init__(self, coro: Coroutine[Any, Any, _T]) -> None:
+        self._coro: Coroutine[Any, Any, _T] = coro
         self._obj: _T
 
-    def send(self, value) -> None:
+    def send(self, value: Any) -> None:
         return self._coro.send(value)
 
-    def throw(self, typ, val=None, tb=None) -> None:
-        if val is None:
-            return self._coro.throw(typ)
-
-        if tb is None:
-            return self._coro.throw(typ, val)
-
-        return self._coro.throw(typ, val, tb)
+    def throw(self, *args, **kwargs) -> None:
+        return self._coro.throw(*args, **kwargs)
 
     def close(self) -> None:
         return self._coro.close()
@@ -47,10 +43,10 @@ class Result(AbstractAsyncContextManager[_T], Coroutine[Any, Any, _T]):
 
 
 def contextmanager(
-    method: Callable[..., Coroutine[Any, Any, _T]],
-) -> Callable[..., Result[_T]]:
-    @wraps(method)
-    def wrapper(self, *args, **kwargs) -> Result[_T]:
-        return Result(method(self, *args, **kwargs))
+    method: Callable[_P, Coroutine[Any, Any, _T]],
+) -> Callable[_P, Result[_T]]:
+    @functools.wraps(method)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Result[_T]:
+        return Result(method(*args, **kwargs))
 
     return wrapper

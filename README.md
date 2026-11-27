@@ -30,7 +30,7 @@ It can also be used in the traditional, procedural manner:
 
 ```python
 db = await aiosqlite.connect(...)
-cursor = await db.execute('SELECT * FROM some_table')
+cursor = await db.execute("SELECT * FROM some_table")
 row = await cursor.fetchone()
 rows = await cursor.fetchall()
 await cursor.close()
@@ -42,11 +42,11 @@ aiosqlite also replicates most of the advanced features of `sqlite3`:
 ```python
 async with aiosqlite.connect(...) as db:
     db.row_factory = aiosqlite.Row
-    async with db.execute('SELECT * FROM some_table') as cursor:
+    async with db.execute("SELECT * FROM some_table") as cursor:
         async for row in cursor:
-            value = row['column']
+            value = row["column"]
 
-    await db.execute('INSERT INTO foo some_table')
+    await db.execute("INSERT INTO foo some_table")
     assert db.total_changes > 0
 ```
 

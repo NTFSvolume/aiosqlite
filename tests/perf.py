@@ -1,9 +1,7 @@
 # Copyright Amethyst Reese
 # Licensed under the MIT license
 
-"""
-Simple perf tests for aiosqlite and the asyncio run loop.
-"""
+"""Simple perf tests for aiosqlite and the asyncio run loop."""
 
 import sqlite3
 import string
@@ -21,15 +19,13 @@ RESULTS: dict[str, tuple[int, float]] = {}
 
 
 def timed(fn, name=None):
-    """
-    Decorator for perf testing a block of async code.
+    """Decorator for perf testing a block of async code.
 
     Expects the wrapped function to return an async generator.
     The generator should do setup, then yield when ready to start perf testing.
     The decorator will then pump the generator repeatedly until the target
     time has been reached, then close the generator and print perf results.
     """
-
     name = name or fn.__name__
 
     async def wrapper(*args, **kwargs):
@@ -52,7 +48,7 @@ def timed(fn, name=None):
             except StopAsyncIteration:
                 break
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"exception occurred: {e}")
                 return
 
@@ -93,7 +89,7 @@ class PerfTest(TestCase):
 
             async with aiosqlite.connect(path) as db:
                 await db.execute(
-                    "create table perf (i integer primary key asc, k integer)"
+                    "create table perf (i integer primary key asc, k integer)",
                 )
                 await db.execute("insert into perf (k) values (2), (3)")
                 await db.commit()
@@ -172,7 +168,7 @@ class PerfTest(TestCase):
         async with aiosqlite.connect(TEST_DB) as db:
             await db.execute("create table perf (i integer primary key asc, k integer)")
             for i in range(100):
-                await db.execute("insert into perf (k) values (%d)" % (i,))
+                await db.execute("insert into perf (k) values (?)", (i,))
             await db.commit()
 
             while True:
@@ -185,7 +181,7 @@ class PerfTest(TestCase):
         async with aiosqlite.connect(TEST_DB) as db:
             await db.execute("create table perf (i integer primary key asc, k integer)")
             for i in range(100):
-                await db.execute("insert into perf (k) values (%d)" % (i,))
+                await db.execute("insert into perf (k) values (?)", (i,))
             await db.commit()
 
             while True:
@@ -196,7 +192,7 @@ class PerfTest(TestCase):
         async with aiosqlite.connect(TEST_DB) as db:
             await db.execute(
                 "create table ic_perf ("
-                "i integer primary key asc, k integer, a integer, b integer, c char(16))"
+                "i integer primary key asc, k integer, a integer, b integer, c char(16))",
             )
             for batch in range(128):  # add 128k rows
                 r_start = batch * 1024
@@ -206,7 +202,7 @@ class PerfTest(TestCase):
                         *[
                             (i, string.ascii_lowercase)
                             for i in range(r_start, r_start + 1024)
-                        ]
+                        ],
                     ],
                 )
                 await db.commit()

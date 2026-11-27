@@ -1,9 +1,7 @@
 # Copyright Amethyst Reese
 # Licensed under the MIT license
 
-"""
-Core implementation of aiosqlite proxies
-"""
+"""Core implementation of aiosqlite proxies"""
 
 from __future__ import annotations
 
@@ -15,7 +13,7 @@ from functools import partial
 from pathlib import Path
 from queue import Empty, Queue, SimpleQueue
 from threading import Thread
-from typing import Any, Literal, Optional, TypeAlias, Union
+from typing import Any, Literal, Self, TypeAlias
 from warnings import warn
 
 from .context import contextmanager
@@ -28,7 +26,7 @@ AuthorizerCallback = Callable[[int, str, str, str, str], int]
 LOG = logging.getLogger("aiosqlite")
 
 
-IsolationLevel = Optional[Literal["DEFERRED", "IMMEDIATE", "EXCLUSIVE"]]
+IsolationLevel = Literal["DEFERRED", "IMMEDIATE", "EXCLUSIVE"] | None
 _RowFactoryOptions: TypeAlias = (
     type[sqlite3.Row] | Callable[[sqlite3.Cursor, tuple[Any, ...]], object] | None
 )
@@ -47,11 +45,13 @@ def set_exception(fut: asyncio.Future, e: BaseException) -> None:
 
 
 _STOP_RUNNING_SENTINEL = object()
-_TxQueue = SimpleQueue[tuple[Optional[asyncio.Future], Callable[[], Any]]]
+_TxQueue = SimpleQueue[tuple[asyncio.Future | None, Callable[[], Any]]]
 
 
 def _call_soon_threadsafe(
-    loop: asyncio.AbstractEventLoop, callback: Callable[..., None], *args: Any
+    loop: asyncio.AbstractEventLoop,
+    callback: Callable[..., None],
+    *args: Any,
 ) -> None:
     if loop.is_closed():
         return
@@ -64,8 +64,7 @@ def _call_soon_threadsafe(
 
 
 def _connection_worker_thread(tx: _TxQueue):
-    """
-    Execute function calls on a separate thread.
+    """Execute function calls on a separate thread.
 
     :meta private:
     """
@@ -102,10 +101,10 @@ class Connection:
         self,
         connector: Callable[[], sqlite3.Connection],
         iter_chunk_size: int,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
+        loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
         self._running = True
-        self._connection: Optional[sqlite3.Connection] = None
+        self._connection: sqlite3.Connection | None = None
         self._connector = connector
         self._tx: _TxQueue = SimpleQueue()
         self._iter_chunk_size = iter_chunk_size
@@ -135,7 +134,7 @@ class Connection:
         # be finalized by its own __del__.
         self.stop()
 
-    def stop(self) -> Optional[asyncio.Future]:
+    def stop(self) -> asyncio.Future | None:
         """Stop the background thread. Prefer `async with` or `await close()`"""
         if not self._running:
             return None
@@ -149,7 +148,7 @@ class Connection:
 
         try:
             future = asyncio.get_event_loop().create_future()
-        except Exception:
+        except Exception:  # noqa: BLE001
             future = None
 
         self._tx.put_nowait((future, close_and_stop))
@@ -162,7 +161,7 @@ class Connection:
 
         return self._connection
 
-    def _execute_insert(self, sql: str, parameters: Any) -> Optional[sqlite3.Row]:
+    def _execute_insert(self, sql: str, parameters: Any) -> sqlite3.Row | None:
         cursor = self._conn.execute(sql, parameters)
         cursor.execute("SELECT last_insert_rowid()")
         return cursor.fetchone()
@@ -178,17 +177,15 @@ class Connection:
 
         function = partial(fn, *args, **kwargs)
         future = asyncio.get_event_loop().create_future()
-
         self._tx.put_nowait((future, function))
-
         return await future
 
-    async def _connect(self) -> "Connection":
+    async def _connect(self) -> Self:
         """Connect to the actual sqlite database."""
         if self._connection is None:
             try:
 
-                def connector():
+                def connector() -> None:
                     # Keep ownership on the worker even if the awaiting task is cancelled.
                     self._connection = self._connector()
 
@@ -201,11 +198,11 @@ class Connection:
 
         return self
 
-    def __await__(self) -> Generator[Any, None, "Connection"]:
+    def __await__(self) -> Generator[Any, None, Self]:
         self._thread.start()
         return self._connect().__await__()
 
-    async def __aenter__(self) -> "Connection":
+    async def __aenter__(self) -> Self:
         return await self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -230,7 +227,6 @@ class Connection:
 
     async def close(self) -> None:
         """Complete queued queries/cursors and close the connection."""
-
         if self._connection is None:
             return
 
@@ -247,35 +243,43 @@ class Connection:
 
     @contextmanager
     async def execute(
-        self, sql: str, parameters: Optional[Iterable[Any]] = None
+        self,
+        sql: str,
+        parameters: Iterable[Any] | None = None,
     ) -> Cursor:
         """Helper to create a cursor and execute the given query."""
         if parameters is None:
-            parameters = []
+            parameters = ()
         cursor = await self._execute(self._conn.execute, sql, parameters)
         return Cursor(self, cursor)
 
     @contextmanager
     async def execute_insert(
-        self, sql: str, parameters: Optional[Iterable[Any]] = None
-    ) -> Optional[sqlite3.Row]:
+        self,
+        sql: str,
+        parameters: Iterable[Any] | None = None,
+    ) -> sqlite3.Row | None:
         """Helper to insert and get the last_insert_rowid."""
         if parameters is None:
-            parameters = []
+            parameters = ()
         return await self._execute(self._execute_insert, sql, parameters)
 
     @contextmanager
     async def execute_fetchall(
-        self, sql: str, parameters: Optional[Iterable[Any]] = None
-    ) -> Iterable[sqlite3.Row]:
+        self,
+        sql: str,
+        parameters: Iterable[Any] | None = None,
+    ) -> list[sqlite3.Row]:
         """Helper to execute a query and return all the data."""
         if parameters is None:
-            parameters = []
+            parameters = ()
         return await self._execute(self._execute_fetchall, sql, parameters)
 
     @contextmanager
     async def executemany(
-        self, sql: str, parameters: Iterable[Iterable[Any]]
+        self,
+        sql: str,
+        parameters: Iterable[Iterable[Any]],
     ) -> Cursor:
         """Helper to create a cursor and execute the given multiquery."""
         cursor = await self._execute(self._conn.executemany, sql, parameters)
@@ -292,10 +296,13 @@ class Connection:
         return self._conn.interrupt()
 
     async def create_function(
-        self, name: str, num_params: int, func: Callable, deterministic: bool = False
+        self,
+        name: str,
+        num_params: int,
+        func: Callable,
+        deterministic: bool = False,
     ) -> None:
-        """
-        Create user-defined function that can be later used
+        """Create user-defined function that can be later used
         within SQL statements. Must be run within the same thread
         that query executions take place so instead of executing directly
         against the connection, we defer this to `run` function.
@@ -318,7 +325,7 @@ class Connection:
         return self._conn.in_transaction
 
     @property
-    def isolation_level(self) -> Optional[str]:
+    def isolation_level(self) -> str | None:
         return self._conn.isolation_level
 
     @isolation_level.setter
@@ -352,7 +359,9 @@ class Connection:
         await self._execute(self._conn.load_extension, path)  # type: ignore
 
     async def set_progress_handler(
-        self, handler: Callable[[], Optional[int]], n: int
+        self,
+        handler: Callable[[], int | None],
+        n: int,
     ) -> None:
         await self._execute(self._conn.set_progress_handler, handler, n)
 
@@ -360,10 +369,10 @@ class Connection:
         await self._execute(self._conn.set_trace_callback, handler)
 
     async def set_authorizer(
-        self, authorizer_callback: Optional[AuthorizerCallback]
+        self,
+        authorizer_callback: AuthorizerCallback | None,
     ) -> None:
-        """
-        Set an authorizer callback to control database access.
+        """Set an authorizer callback to control database access.
 
         The authorizer callback is invoked for each SQL statement that is prepared,
         and controls whether specific operations are permitted.
@@ -404,8 +413,7 @@ class Connection:
         await self._execute(self._conn.set_authorizer, authorizer_callback)
 
     async def iterdump(self) -> AsyncIterator[str]:
-        """
-        Return an async iterator to dump the database in SQL text format.
+        """Return an async iterator to dump the database in SQL text format.
 
         Example::
 
@@ -431,7 +439,7 @@ class Connection:
 
         while True:
             try:
-                line: Optional[str] = dump_queue.get_nowait()
+                line: str | None = dump_queue.get_nowait()
                 if line is None:
                     break
                 yield line
@@ -447,15 +455,14 @@ class Connection:
 
     async def backup(
         self,
-        target: Union["Connection", sqlite3.Connection],
+        target: Connection | sqlite3.Connection,
         *,
         pages: int = 0,
-        progress: Optional[Callable[[int, int, int], None]] = None,
+        progress: Callable[[int, int, int], None] | None = None,
         name: str = "main",
         sleep: float = 0.250,
     ) -> None:
-        """
-        Make a backup of the current database to the target database.
+        """Make a backup of the current database to the target database.
 
         Takes either a standard sqlite3 or aiosqlite Connection object as the target.
         """
@@ -473,14 +480,13 @@ class Connection:
 
 
 def connect(
-    database: Union[str, Path],
+    database: str | Path,
     *,
     iter_chunk_size=64,
-    loop: Optional[asyncio.AbstractEventLoop] = None,
+    loop: asyncio.AbstractEventLoop | None = None,
     **kwargs: Any,
 ) -> Connection:
     """Create and return a connection proxy to the sqlite database."""
-
     if loop is not None:
         warn(
             "aiosqlite.connect() no longer uses the `loop` parameter",

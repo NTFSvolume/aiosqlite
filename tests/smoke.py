@@ -2,17 +2,21 @@
 # Licensed under the MIT license
 
 import asyncio
+import contextlib
 import sqlite3
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from sqlite3 import OperationalError
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
+from typing import Any
 from unittest import IsolatedAsyncioTestCase, SkipTest
 from unittest.mock import patch
 
 import aiosqlite
 from aiosqlite import core
+
 from .helpers import setup_logger
 
 
@@ -44,15 +48,17 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 rows = await cursor.fetchall()
                 self.assertEqual(rows, [(1, 2)])
 
-    async def test_connection_context_commits(self):
-        options = [
-            {"isolation_level": level}
-            for level in (None, "", "DEFERRED", "IMMEDIATE", "EXCLUSIVE")
-        ]
-        if sys.version_info >= (3, 12):
-            options.extend([{"autocommit": True}, {"autocommit": False}])
+    async def test_connection_context_commits(self) -> None:
+        def options() -> Iterable[dict[str, Any]]:
 
-        for kwargs in options:
+            for level in (None, "", "DEFERRED", "IMMEDIATE", "EXCLUSIVE"):
+                yield {"isolation_level": level}
+
+            if sys.version_info >= (3, 12):
+                yield {"autocommit": True}
+                yield {"autocommit": False}
+
+        for kwargs in options():
             with self.subTest(kwargs=kwargs):
                 with sqlite3.connect(self.db) as setup:
                     setup.execute("drop table if exists context_transaction")
@@ -76,36 +82,38 @@ class SmokeTest(IsolatedAsyncioTestCase):
             setup.execute("create table context_transaction (value integer)")
         setup.close()
 
+        db = aiosqlite.connect(self.db)
         with self.assertRaisesRegex(RuntimeError, "abort transaction"):
-            async with aiosqlite.connect(self.db) as db:
+            async with db:
                 await db.execute("insert into context_transaction values (42)")
                 raise RuntimeError("abort transaction")
 
-        with sqlite3.connect(self.db) as check:
+        with contextlib.closing(sqlite3.connect(self.db)) as check, check:
             self.assertEqual(
-                check.execute("select * from context_transaction").fetchall(), []
+                check.execute("select * from context_transaction").fetchall(),
+                [],
             )
-        check.close()
+
         with self.assertRaisesRegex(ValueError, "no active connection"):
             await db.execute("select 1")
 
     async def test_connection_context_failed_commit(self):
-        with sqlite3.connect(self.db) as setup:
+        with contextlib.closing(sqlite3.connect(self.db)) as setup, setup:
             setup.execute("create table parent (id integer primary key)")
             setup.execute(
                 "create table child (parent_id integer references parent(id) "
-                "deferrable initially deferred)"
+                "deferrable initially deferred)",
             )
-        setup.close()
 
+        db = aiosqlite.connect(self.db)
         with self.assertRaisesRegex(sqlite3.IntegrityError, "FOREIGN KEY"):
-            async with aiosqlite.connect(self.db) as db:
+            async with db:
                 await db.execute("pragma foreign_keys = on")
                 await db.execute("insert into child values (42)")
 
-        with sqlite3.connect(self.db) as check:
+        with contextlib.closing(sqlite3.connect(self.db)) as check, check:
             self.assertEqual(check.execute("select * from child").fetchall(), [])
-        check.close()
+
         with self.assertRaisesRegex(ValueError, "no active connection"):
             await db.execute("select 1")
 
@@ -139,7 +147,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
         async with aiosqlite.connect(self.db) as db:
             await db.execute(
                 "create table multiple_connections "
-                "(i integer primary key asc, k integer)"
+                "(i integer primary key asc, k integer)",
             )
 
         async def do_one_conn(i):
@@ -158,15 +166,14 @@ class SmokeTest(IsolatedAsyncioTestCase):
     async def test_multiple_queries(self):
         async with aiosqlite.connect(self.db) as db:
             await db.execute(
-                "create table multiple_queries "
-                "(i integer primary key asc, k integer)"
+                "create table multiple_queries (i integer primary key asc, k integer)",
             )
 
             await asyncio.gather(
                 *[
                     db.execute("insert into multiple_queries (k) values (?)", [i])
                     for i in range(10)
-                ]
+                ],
             )
 
             await db.commit()
@@ -181,10 +188,11 @@ class SmokeTest(IsolatedAsyncioTestCase):
         async with aiosqlite.connect(self.db) as db:
             cursor = await db.cursor()
             await cursor.execute(
-                "create table iterable_cursor " "(i integer primary key asc, k integer)"
+                "create table iterable_cursor (i integer primary key asc, k integer)",
             )
             await cursor.executemany(
-                "insert into iterable_cursor (k) values (?)", [[i] for i in range(10)]
+                "insert into iterable_cursor (k) values (?)",
+                [[i] for i in range(10)],
             )
             await db.commit()
 
@@ -215,7 +223,8 @@ class SmokeTest(IsolatedAsyncioTestCase):
         async with aiosqlite.connect(":memory:") as db:
             await db.execute("create table foo (id int, name varchar)")
             await db.execute(
-                "insert into foo values (?, ?), (?, ?)", (1, "Sally", 2, "Janet")
+                "insert into foo values (?, ?), (?, ?)",
+                (1, "Sally", 2, "Janet"),
             )
             await db.commit()
 
@@ -230,23 +239,23 @@ class SmokeTest(IsolatedAsyncioTestCase):
             self.assertEqual(len(rows), 2)
 
     async def test_context_cursor(self):
-        async with aiosqlite.connect(self.db) as db:
-            async with db.cursor() as cursor:
-                await cursor.execute(
-                    "create table context_cursor "
-                    "(i integer primary key asc, k integer)"
-                )
-                await cursor.executemany(
-                    "insert into context_cursor (k) values (?)",
-                    [[i] for i in range(10)],
-                )
-                await db.commit()
+        async with aiosqlite.connect(self.db) as db, db.cursor() as cursor:
+            await cursor.execute(
+                "create table context_cursor (i integer primary key asc, k integer)",
+            )
+            await cursor.executemany(
+                "insert into context_cursor (k) values (?)",
+                [[i] for i in range(10)],
+            )
+            await db.commit()
 
-        async with aiosqlite.connect(self.db) as db:
-            async with db.execute("select * from context_cursor") as cursor:
-                rows = []
-                async for row in cursor:
-                    rows.append(row)
+        async with (
+            aiosqlite.connect(self.db) as db,
+            db.execute("select * from context_cursor") as cursor,
+        ):
+            rows = []
+            async for row in cursor:
+                rows.append(row)
 
         assert len(rows) == 10
 
@@ -255,19 +264,20 @@ class SmokeTest(IsolatedAsyncioTestCase):
             cursor = await db.cursor()
 
             result = await cursor.execute(
-                "create table test_cursor_return_self (i integer, k integer)"
+                "create table test_cursor_return_self (i integer, k integer)",
             )
             self.assertEqual(result, cursor, "cursor execute returns itself")
 
             result = await cursor.executemany(
-                "insert into test_cursor_return_self values (?, ?)", [(1, 1), (2, 2)]
+                "insert into test_cursor_return_self values (?, ?)",
+                [(1, 1), (2, 2)],
             )
             self.assertEqual(result, cursor)
 
             result = await cursor.executescript(
                 "insert into test_cursor_return_self values (3, 3);"
                 "insert into test_cursor_return_self values (4, 4);"
-                "insert into test_cursor_return_self values (5, 5);"
+                "insert into test_cursor_return_self values (5, 5);",
             )
             self.assertEqual(result, cursor)
 
@@ -279,10 +289,10 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 self.assertFalse(db.in_transaction)
                 await cursor.execute(
                     "create table test_properties "
-                    "(i integer primary key asc, k integer, d text)"
+                    "(i integer primary key asc, k integer, d text)",
                 )
                 await cursor.execute(
-                    "insert into test_properties (k, d) values (1, 'hi')"
+                    "insert into test_properties (k, d) values (1, 'hi')",
                 )
                 self.assertTrue(db.in_transaction)
                 await db.commit()
@@ -327,18 +337,17 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 self.assertEqual(row["d"], b"hi")
 
     async def test_cursor_connection(self):
-        async with aiosqlite.connect(self.db) as db:
-            async with db.cursor() as cursor:
-                self.assertIs(cursor.connection, db)
-                await cursor.connection.commit()
+        async with aiosqlite.connect(self.db) as db, db.cursor() as cursor:
+            self.assertIs(cursor.connection, db)
+            await cursor.connection.commit()
 
     async def test_fetch_all(self):
         async with aiosqlite.connect(self.db) as db:
             await db.execute(
-                "create table test_fetch_all (i integer primary key asc, k integer)"
+                "create table test_fetch_all (i integer primary key asc, k integer)",
             )
             await db.execute(
-                "insert into test_fetch_all (k) values (10), (24), (16), (32)"
+                "insert into test_fetch_all (k) values (10), (24), (16), (32)",
             )
             await db.commit()
 
@@ -358,18 +367,16 @@ class SmokeTest(IsolatedAsyncioTestCase):
             except AttributeError as e:
                 raise SkipTest(
                     "python was not compiled with sqlite3 "
-                    "extension support, so we can't test it"
+                    "extension support, so we can't test it",
                 ) from e
 
     async def test_set_progress_handler(self):
-        """
-        Assert that after setting a progress handler returning 1, DB operations are aborted
-        """
+        """Assert that after setting a progress handler returning 1, DB operations are aborted"""
         async with aiosqlite.connect(self.db) as db:
             await db.set_progress_handler(lambda: 1, 1)
             with self.assertRaises(OperationalError):
                 await db.execute(
-                    "create table test_progress_handler (i integer primary key asc, k integer)"
+                    "create table test_progress_handler (i integer primary key asc, k integer)",
                 )
 
     async def test_create_function(self):
@@ -441,10 +448,8 @@ class SmokeTest(IsolatedAsyncioTestCase):
             with self.assertRaises(sqlite3.DatabaseError):
                 await db.execute("DROP TABLE test_drop")
 
-            if sys.version_info >= (3, 11):
-                # Disabling the authorizer re-enables DROP
-                await db.set_authorizer(None)
-                await db.execute("DROP TABLE test_drop")
+            await db.set_authorizer(None)
+            await db.execute("DROP TABLE test_drop")
 
     async def test_set_authorizer_exception_propagation(self):
         """Test that exceptions raised in authorizer callback are caught by SQLite"""
@@ -507,7 +512,9 @@ class SmokeTest(IsolatedAsyncioTestCase):
             return native
 
         connection = aiosqlite.connect(
-            self.db, factory=factory, check_same_thread=False
+            self.db,
+            factory=factory,
+            check_same_thread=False,
         )
 
         async def open_connection():
@@ -550,7 +557,9 @@ class SmokeTest(IsolatedAsyncioTestCase):
             return native
 
         connection = aiosqlite.connect(
-            self.db, factory=factory, check_same_thread=False
+            self.db,
+            factory=factory,
+            check_same_thread=False,
         )
 
         async def cancel_connection():
@@ -586,7 +595,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
     def _check_loop_closes_during_worker_delivery(self, delivery):
         loop = asyncio.new_event_loop()
         connection = loop.run_until_complete(
-            aiosqlite.connect(self.db, check_same_thread=False)
+            aiosqlite.connect(self.db, check_same_thread=False),
         )
         native = connection._conn
         started = loop.create_future()
@@ -637,7 +646,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 release.set()
                 if connection._thread.is_alive():
                     connection._tx.put_nowait(
-                        (None, lambda: core._STOP_RUNNING_SENTINEL)
+                        (None, lambda: core._STOP_RUNNING_SENTINEL),
                     )
                 connection._thread.join(5)
                 loop.close()
@@ -662,7 +671,8 @@ class SmokeTest(IsolatedAsyncioTestCase):
         async with aiosqlite.connect(":memory:") as db:
             await db.execute("create table foo (i integer, k charvar(250))")
             await db.executemany(
-                "insert into foo values (?, ?)", [(1, "hello"), (2, "world")]
+                "insert into foo values (?, ?)",
+                [(1, "hello"), (2, "world")],
             )
 
             lines = [line async for line in db.iterdump()]
@@ -739,7 +749,8 @@ class SmokeTest(IsolatedAsyncioTestCase):
         ):
             await db1.execute("create table foo (i integer, k charvar(250))")
             await db1.executemany(
-                "insert into foo values (?, ?)", [(1, "hello"), (2, "world")]
+                "insert into foo values (?, ?)",
+                [(1, "hello"), (2, "world")],
             )
             await db1.commit()
 
@@ -757,7 +768,8 @@ class SmokeTest(IsolatedAsyncioTestCase):
             with sqlite3.connect(":memory:") as db2:
                 await db1.execute("create table foo (i integer, k charvar(250))")
                 await db1.executemany(
-                    "insert into foo values (?, ?)", [(1, "hello"), (2, "world")]
+                    "insert into foo values (?, ?)",
+                    [(1, "hello"), (2, "world")],
                 )
                 await db1.commit()
 
@@ -774,7 +786,8 @@ class SmokeTest(IsolatedAsyncioTestCase):
         db = await aiosqlite.connect(":memory:")
 
         with self.assertWarnsRegex(
-            ResourceWarning, r".*was deleted before being closed.*"
+            ResourceWarning,
+            r".*was deleted before being closed.*",
         ):
             del db
 
