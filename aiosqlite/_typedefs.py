@@ -20,11 +20,14 @@ Parameters: TypeAlias = (
     SupportsLenAndGetItem[AdaptedInputData] | Mapping[str, AdaptedInputData]
 )
 
-RowFactoryOptions: TypeAlias = (
+RowFactoryOptions = (
     type[sqlite3.Row] | Callable[[sqlite3.Cursor, tuple[Any, ...]], object] | None
 )
 
 IsolationLevel = Literal["DEFERRED", "IMMEDIATE", "EXCLUSIVE"] | None
+AuthorizerCallback = Callable[
+    [int, str | None, str | None, str | None, str | None], int
+]
 
 
 class _ConnectionParamsP311(TypedDict, total=False):
