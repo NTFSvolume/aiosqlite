@@ -71,20 +71,18 @@ def _call_soon_threadsafe(
 
 
 def _execute(future: asyncio.Future | None, function: Callable[[], Any]) -> bool:
+    LOG.debug("executing %s", function)
     try:
-        LOG.debug("executing %s", function)
         result = function()
-        LOG.debug("operation %s completed", function)
-
-        if future is not None:
-            _call_soon_threadsafe(future.get_loop(), _set_result, future, result)
-
     except BaseException as e:  # noqa B036
         LOG.debug("returning exception %s", e)
-        if future:
+        if future is not None:
             _call_soon_threadsafe(future.get_loop(), _set_exception, future, e)
         return False
     else:
+        LOG.debug("operation %s completed", function)
+        if future is not None:
+            _call_soon_threadsafe(future.get_loop(), _set_result, future, result)
         return result is _STOP_RUNNING_SENTINEL
 
 
