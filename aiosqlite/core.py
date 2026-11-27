@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from ._typedefs import (
+        AuthorizerCallback,
         ConnectionParams,
         IsolationLevel,
         Parameters,
@@ -35,16 +36,16 @@ if TYPE_CHECKING:
 
 __all__ = ["Connection", "Cursor", "connect"]
 
-AuthorizerCallback = Callable[
-    [int, str | None, str | None, str | None, str | None], int
-]
-
 
 LOG = logging.getLogger("aiosqlite")
 
 
 _T = TypeVar("_T")
 _P = ParamSpec("_P")
+_STOP_RUNNING_SENTINEL = Sentinel("_STOP_RUNNING_SENTINEL")
+_Msg = tuple[asyncio.Future | None, Callable[[], Any], contextvars.Context]
+_TxQueue = SimpleQueue[_Msg]
+_Ts = TypeVarTuple("_Ts")
 
 
 def _set_result(fut: asyncio.Future, result: Any) -> None:
@@ -57,12 +58,6 @@ def _set_exception(fut: asyncio.Future, e: BaseException) -> None:
     """Set the exception of a future if it hasn't been set already."""
     if not fut.done():
         fut.set_exception(e)
-
-
-_STOP_RUNNING_SENTINEL = Sentinel("_STOP_RUNNING_SENTINEL")
-_Msg = tuple[asyncio.Future | None, Callable[[], Any], contextvars.Context]
-_TxQueue = SimpleQueue[_Msg]
-_Ts = TypeVarTuple("_Ts")
 
 
 def _call_soon_threadsafe(
@@ -95,10 +90,7 @@ def _execute(future: asyncio.Future | None, function: Callable[[], Any]) -> bool
 
 
 def _connection_worker_thread(tx: _TxQueue) -> None:
-    """Execute function calls on a separate thread.
-
-    :meta private:
-    """
+    """Execute function calls on a separate thread."""
     while True:
         # Continues running until all queue items are processed,
         # even after connection is closed (so we can finalize all

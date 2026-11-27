@@ -17,6 +17,9 @@ classifiers = [
     "Programming Language :: Python :: 3.15",
     "Topic :: Software Development :: Libraries"
 ]
+dependencies = [
+    "typing-extensions>=4.16.0"
+]
 license = "MIT"
 license-files = ["LICENSE"]
 maintainers = [{name = "NTFSvolume", email = "NTFSvolume@proton.me"}]
