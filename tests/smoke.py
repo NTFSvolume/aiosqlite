@@ -309,6 +309,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 self.assertIsInstance(row, tuple)
                 self.assertEqual(row, (1, 1, "hi"))
                 with self.assertRaises(TypeError):
+                    assert row is not None
                     _ = row["k"]
 
             async with db.cursor() as cursor:
@@ -317,6 +318,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 await cursor.execute("select * from test_properties")
                 row = await cursor.fetchone()
                 self.assertIsInstance(row, aiosqlite.Row)
+                assert row is not None
                 self.assertEqual(row[1], 1)
                 self.assertEqual(row[2], "hi")
                 self.assertEqual(row["k"], 1)
@@ -331,6 +333,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 await cursor.execute("select * from test_properties")
                 row = await cursor.fetchone()
                 self.assertIsInstance(row, aiosqlite.Row)
+                assert row is not None
                 self.assertEqual(row[1], 1)
                 self.assertEqual(row[2], b"hi")
                 self.assertEqual(row["k"], 1)
@@ -604,9 +607,9 @@ class SmokeTest(IsolatedAsyncioTestCase):
 
         def gated_schedule(callback, *args, context=None):
             is_target = (
-                callback is core.set_result and args[1] is core._STOP_RUNNING_SENTINEL
+                callback is core._set_result and args[1] is core._STOP_RUNNING_SENTINEL
                 if delivery == "stop"
-                else callback is core.set_exception
+                else callback is core._set_exception
             )
             if is_target:
                 # Close the loop after the worker's is_closed() check.
@@ -793,14 +796,16 @@ class SmokeTest(IsolatedAsyncioTestCase):
 
     async def test_stop_without_close(self):
         db = await aiosqlite.connect(":memory:")
-        await db.stop()
+        future = db.stop()
+        self.assertIsNotNone(future)
+        assert future is not None
+        await future
 
     def test_stop_after_event_loop_closed(self):
-        db = None
+        db = aiosqlite.connect(":memory:")
 
         async def inner():
-            nonlocal db
-            db = await aiosqlite.connect(":memory:")
+            await db
 
         loop = asyncio.new_event_loop()
         loop.run_until_complete(inner())

@@ -39,7 +39,7 @@ class Result(AbstractAsyncContextManager[_T], Coroutine[Any, Any, _T]):
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         if isinstance(self._obj, Cursor):
-            await self._obj.close()
+            await self._obj.aclose()
 
 
 def contextmanager(

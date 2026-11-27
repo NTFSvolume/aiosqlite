@@ -5,7 +5,7 @@ import logging
 import sys
 
 
-def setup_logger():
+def setup_logger() -> logging.Logger:
     log = logging.getLogger("")
     log.setLevel(logging.INFO)
 

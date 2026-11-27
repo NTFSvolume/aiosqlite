@@ -7,51 +7,55 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sqlite3
 from collections.abc import AsyncIterator, Callable, Generator, Iterable
 from functools import partial
-from pathlib import Path
 from queue import Empty, Queue, SimpleQueue
 from threading import Thread
-from typing import Any, Literal, Self, TypeAlias
+from types import TracebackType
+from typing import Any, ParamSpec, Self, TypeVar, TypeVarTuple, Unpack
 from warnings import warn
 
+from typing_extensions import Sentinel, deprecated
+
+from ._typedefs import ConnectionParams, IsolationLevel, Parameters, RowFactoryOptions
 from .context import contextmanager
 from .cursor import Cursor
 
 __all__ = ["Connection", "Cursor", "connect"]
 
-AuthorizerCallback = Callable[[int, str, str, str, str], int]
+AuthorizerCallback = Callable[
+    [int, str | None, str | None, str | None, str | None], int
+]
+
 
 LOG = logging.getLogger("aiosqlite")
 
 
-IsolationLevel = Literal["DEFERRED", "IMMEDIATE", "EXCLUSIVE"] | None
-_RowFactoryOptions: TypeAlias = (
-    type[sqlite3.Row] | Callable[[sqlite3.Cursor, tuple[Any, ...]], object] | None
-)
+_T = TypeVar("_T")
+_P = ParamSpec("_P")
 
 
-def set_result(fut: asyncio.Future, result: Any) -> None:
+def _set_result(fut: asyncio.Future, result: Any) -> None:
     """Set the result of a future if it hasn't been set already."""
     if not fut.done():
         fut.set_result(result)
 
 
-def set_exception(fut: asyncio.Future, e: BaseException) -> None:
+def _set_exception(fut: asyncio.Future, e: BaseException) -> None:
     """Set the exception of a future if it hasn't been set already."""
     if not fut.done():
         fut.set_exception(e)
 
 
-_STOP_RUNNING_SENTINEL = object()
+_STOP_RUNNING_SENTINEL = Sentinel("_STOP_RUNNING_SENTINEL")
 _TxQueue = SimpleQueue[tuple[asyncio.Future | None, Callable[[], Any]]]
+_Ts = TypeVarTuple("_Ts")
 
 
 def _call_soon_threadsafe(
-    loop: asyncio.AbstractEventLoop,
-    callback: Callable[..., None],
-    *args: Any,
+    loop: asyncio.AbstractEventLoop, callback: Callable[[*_Ts], object], *args: *_Ts
 ) -> None:
     if loop.is_closed():
         return
@@ -63,7 +67,7 @@ def _call_soon_threadsafe(
             raise
 
 
-def _connection_worker_thread(tx: _TxQueue):
+def _connection_worker_thread(tx: _TxQueue) -> None:
     """Execute function calls on a separate thread.
 
     :meta private:
@@ -85,7 +89,7 @@ def _connection_worker_thread(tx: _TxQueue):
                 del function
 
             if future:
-                _call_soon_threadsafe(future.get_loop(), set_result, future, result)
+                _call_soon_threadsafe(future.get_loop(), _set_result, future, result)
 
             if result is _STOP_RUNNING_SENTINEL:
                 break
@@ -93,7 +97,7 @@ def _connection_worker_thread(tx: _TxQueue):
         except BaseException as e:  # noqa B036
             LOG.debug("returning exception %s", e)
             if future:
-                _call_soon_threadsafe(future.get_loop(), set_exception, future, e)
+                _call_soon_threadsafe(future.get_loop(), _set_exception, future, e)
 
 
 class Connection:
@@ -116,14 +120,19 @@ class Connection:
                 DeprecationWarning,
             )
 
-    def __del__(self):
+    def __repr__(self) -> str:
+        field_names = ("_running", "_connection", "_thread", "_iter_chunk_size")
+        fields = (f"{name}={getattr(self, name)!r}" for name in field_names)
+        return f"<{type(self).__name__}({', '.join(fields)}>"
+
+    def __del__(self) -> None:
         if self._connection is None:
             return
 
         warn(
             (
                 f"{self!r} was deleted before being closed. "
-                "Please use 'async with' or '.close()' to close the connection properly."
+                "Please use 'async with' to make sure the connection is closed properly."
             ),
             ResourceWarning,
             stacklevel=1,
@@ -154,32 +163,6 @@ class Connection:
         self._tx.put_nowait((future, close_and_stop))
         return future
 
-    @property
-    def _conn(self) -> sqlite3.Connection:
-        if self._connection is None:
-            raise ValueError("no active connection")
-
-        return self._connection
-
-    def _execute_insert(self, sql: str, parameters: Any) -> sqlite3.Row | None:
-        cursor = self._conn.execute(sql, parameters)
-        cursor.execute("SELECT last_insert_rowid()")
-        return cursor.fetchone()
-
-    def _execute_fetchall(self, sql: str, parameters: Any) -> Iterable[sqlite3.Row]:
-        cursor = self._conn.execute(sql, parameters)
-        return cursor.fetchall()
-
-    async def _execute(self, fn, *args, **kwargs):
-        """Queue a function with the given arguments for execution."""
-        if not self._running or not self._connection:
-            raise ValueError("Connection closed")
-
-        function = partial(fn, *args, **kwargs)
-        future = asyncio.get_event_loop().create_future()
-        self._tx.put_nowait((future, function))
-        return await future
-
     async def _connect(self) -> Self:
         """Connect to the actual sqlite database."""
         if self._connection is None:
@@ -191,6 +174,7 @@ class Connection:
 
                 future = asyncio.get_event_loop().create_future()
                 self._tx.put_nowait((future, connector))
+                self._thread.start()
                 await future
             except BaseException:
                 self.stop()
@@ -198,34 +182,32 @@ class Connection:
 
         return self
 
+    @deprecated(
+        "Please use 'async with' to make sure the connection is closed properly"
+    )
     def __await__(self) -> Generator[Any, None, Self]:
-        self._thread.start()
         return self._connect().__await__()
 
     async def __aenter__(self) -> Self:
-        return await self
+        return await self._connect()
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         try:
             if self._connection is not None:
                 await self._execute(self._conn.__exit__, exc_type, exc_val, exc_tb)
         finally:
-            await self.close()
+            await self.aclose()
 
-    @contextmanager
-    async def cursor(self) -> Cursor:
-        """Create an aiosqlite cursor wrapping a sqlite3 cursor object."""
-        return Cursor(self, await self._execute(self._conn.cursor))
-
-    async def commit(self) -> None:
-        """Commit the current transaction."""
-        await self._execute(self._conn.commit)
-
-    async def rollback(self) -> None:
-        """Roll back the current transaction."""
-        await self._execute(self._conn.rollback)
-
+    @deprecated("Use Connection.aclose()")
     async def close(self) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
         """Complete queued queries/cursors and close the connection."""
         if self._connection is None:
             return
@@ -241,12 +223,49 @@ class Connection:
             if future:
                 await future
 
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        if self._connection is None:
+            raise ValueError("no active connection")
+
+        return self._connection
+
+    async def _execute(
+        self, fn: Callable[_P, _T], *args: _P.args, **kwargs: _P.kwargs
+    ) -> _T:
+        """Queue a function with the given arguments for execution."""
+        if not self._running or not self._connection:
+            raise ValueError("Connection closed")
+
+        function = partial(fn, *args, **kwargs)
+        future = asyncio.get_event_loop().create_future()
+        self._tx.put_nowait((future, function))
+        return await future
+
+    def _execute_insert(self, sql: str, parameters: Parameters) -> sqlite3.Row | None:
+        cursor = self._conn.execute(sql, parameters)
+        cursor.execute("SELECT last_insert_rowid()")
+        return cursor.fetchone()
+
+    def _execute_fetchall(self, sql: str, parameters: Parameters) -> list[sqlite3.Row]:
+        cursor = self._conn.execute(sql, parameters)
+        return cursor.fetchall()
+
     @contextmanager
-    async def execute(
-        self,
-        sql: str,
-        parameters: Iterable[Any] | None = None,
-    ) -> Cursor:
+    async def cursor(self) -> Cursor:
+        """Create an aiosqlite cursor wrapping a sqlite3 cursor object."""
+        return Cursor(self, await self._execute(self._conn.cursor))
+
+    async def commit(self) -> None:
+        """Commit the current transaction."""
+        await self._execute(self._conn.commit)
+
+    async def rollback(self) -> None:
+        """Roll back the current transaction."""
+        await self._execute(self._conn.rollback)
+
+    @contextmanager
+    async def execute(self, sql: str, parameters: Parameters | None = None) -> Cursor:
         """Helper to create a cursor and execute the given query."""
         if parameters is None:
             parameters = ()
@@ -255,9 +274,7 @@ class Connection:
 
     @contextmanager
     async def execute_insert(
-        self,
-        sql: str,
-        parameters: Iterable[Any] | None = None,
+        self, sql: str, parameters: Parameters | None = None
     ) -> sqlite3.Row | None:
         """Helper to insert and get the last_insert_rowid."""
         if parameters is None:
@@ -266,9 +283,7 @@ class Connection:
 
     @contextmanager
     async def execute_fetchall(
-        self,
-        sql: str,
-        parameters: Iterable[Any] | None = None,
+        self, sql: str, parameters: Parameters | None = None
     ) -> list[sqlite3.Row]:
         """Helper to execute a query and return all the data."""
         if parameters is None:
@@ -276,11 +291,7 @@ class Connection:
         return await self._execute(self._execute_fetchall, sql, parameters)
 
     @contextmanager
-    async def executemany(
-        self,
-        sql: str,
-        parameters: Iterable[Iterable[Any]],
-    ) -> Cursor:
+    async def executemany(self, sql: str, parameters: Iterable[Parameters]) -> Cursor:
         """Helper to create a cursor and execute the given multiquery."""
         cursor = await self._execute(self._conn.executemany, sql, parameters)
         return Cursor(self, cursor)
@@ -333,11 +344,11 @@ class Connection:
         self._conn.isolation_level = value
 
     @property
-    def row_factory(self) -> _RowFactoryOptions:
+    def row_factory(self) -> RowFactoryOptions:
         return self._conn.row_factory
 
     @row_factory.setter
-    def row_factory(self, factory: _RowFactoryOptions) -> None:
+    def row_factory(self, factory: RowFactoryOptions) -> None:
         self._conn.row_factory = factory
 
     @property
@@ -353,10 +364,10 @@ class Connection:
         return self._conn.total_changes
 
     async def enable_load_extension(self, value: bool) -> None:
-        await self._execute(self._conn.enable_load_extension, value)  # type: ignore
+        await self._execute(self._conn.enable_load_extension, value)
 
-    async def load_extension(self, path: str):
-        await self._execute(self._conn.load_extension, path)  # type: ignore
+    async def load_extension(self, path: str) -> None:
+        await self._execute(self._conn.load_extension, path)
 
     async def set_progress_handler(
         self,
@@ -480,11 +491,11 @@ class Connection:
 
 
 def connect(
-    database: str | Path,
+    database: os.PathLike[str] | str,
     *,
-    iter_chunk_size=64,
+    iter_chunk_size: int = 64,
     loop: asyncio.AbstractEventLoop | None = None,
-    **kwargs: Any,
+    **kwargs: Unpack[ConnectionParams],
 ) -> Connection:
     """Create and return a connection proxy to the sqlite database."""
     if loop is not None:
@@ -494,12 +505,14 @@ def connect(
         )
 
     def connector() -> sqlite3.Connection:
-        if isinstance(database, str):
-            loc = database
-        elif isinstance(database, bytes):
-            loc = database.decode("utf-8")
-        else:
+        try:
+            loc = os.fspath(database)
+        except TypeError as e:
+            warn(f"{e}. Casting as as string", UserWarning)
             loc = str(database)
+        else:
+            if isinstance(loc, bytes):
+                loc = loc.decode("utf-8")
 
         return sqlite3.connect(loc, **kwargs)
 
