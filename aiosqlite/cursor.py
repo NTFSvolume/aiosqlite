@@ -1,9 +1,10 @@
 # Copyright Amethyst Reese
 # Licensed under the MIT license
+from __future__ import annotations
 
 import sqlite3
 from collections.abc import AsyncIterator, Iterable
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from .core import Connection, _RowFactoryOptions

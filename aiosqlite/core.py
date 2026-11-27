@@ -5,21 +5,23 @@
 Core implementation of aiosqlite proxies
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import sqlite3
-from collections.abc import AsyncIterator, Generator, Iterable
+from collections.abc import AsyncIterator, Callable, Generator, Iterable
 from functools import partial
 from pathlib import Path
 from queue import Empty, Queue, SimpleQueue
 from threading import Thread
-from typing import Any, Callable, Literal, Optional, TypeAlias, Union
+from typing import Any, Literal, Optional, TypeAlias, Union
 from warnings import warn
 
 from .context import contextmanager
 from .cursor import Cursor
 
-__all__ = ["connect", "Connection", "Cursor"]
+__all__ = ["Connection", "Cursor", "connect"]
 
 AuthorizerCallback = Callable[[int, str, str, str, str], int]
 
