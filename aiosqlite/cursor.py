@@ -33,7 +33,7 @@ class Cursor:
         return await self._conn._execute(fn, *args, **kwargs)
 
     async def execute(
-        self, sql: str, parameters: Iterable[Any] | None = None
+        self, sql: str, parameters: Iterable[Any] | None = None,
     ) -> Cursor:
         """Execute the given query."""
         if parameters is None:
@@ -42,7 +42,7 @@ class Cursor:
         return self
 
     async def executemany(
-        self, sql: str, parameters: Iterable[Iterable[Any]]
+        self, sql: str, parameters: Iterable[Iterable[Any]],
     ) -> Cursor:
         """Execute the given multiquery."""
         await self._execute(self._cursor.executemany, sql, parameters)
@@ -57,14 +57,14 @@ class Cursor:
         """Fetch a single row."""
         return await self._execute(self._cursor.fetchone)
 
-    async def fetchmany(self, size: int | None = None) -> Iterable[sqlite3.Row]:
+    async def fetchmany(self, size: int | None = None) -> list[sqlite3.Row]:
         """Fetch up to `cursor.arraysize` number of rows."""
         args: tuple[int, ...] = ()
         if size is not None:
             args = (size,)
         return await self._execute(self._cursor.fetchmany, *args)
 
-    async def fetchall(self) -> Iterable[sqlite3.Row]:
+    async def fetchall(self) -> list[sqlite3.Row]:
         """Fetch all remaining rows."""
         return await self._execute(self._cursor.fetchall)
 
