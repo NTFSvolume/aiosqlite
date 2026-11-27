@@ -1,14 +1,9 @@
 PKG:=aiosqlite
-EXTRAS:=dev,docs
+EXTRAS:=dev
 
 UV:=$(shell uv --version)
-ifdef UV
-	VENV:=uv venv
-	PIP:=uv pip
-else
-	VENV:=python -m venv
-	PIP:=python -m pip
-endif
+VENV:=uv venv
+PIP:=uv pip
 
 install:
 	$(PIP) install -Ue .[$(EXTRAS)]
@@ -26,23 +21,11 @@ test:
 	python -m mypy -p $(PKG)
 
 lint:
-	python -m flake8 $(PKG)
-	python -m ufmt check $(PKG)
+	uv run ruff check $(PKG)
+	uv run format --check $(PKG)
 
 format:
-	python -m ufmt format $(PKG)
+	uv run format $(PKG)
 
 perf:
 	python -m unittest -v $(PKG).tests.perf
-
-.PHONY: html
-html: .venv README.rst docs/*.rst docs/conf.py
-	.venv/bin/sphinx-build -an -b html docs html
-
-.PHONY: clean
-clean:
-	rm -rf build dist html README MANIFEST *.egg-info
-
-.PHONY: distclean
-distclean: clean
-	rm -rf .venv
