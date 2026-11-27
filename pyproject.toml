@@ -47,7 +47,7 @@ skip_covered = true
 [tool.coverage.run]
 branch = true
 include = ["aiosqlite/*"]
-omit = ["aiosqlite/tests/*"]
+omit = ["tests/*"]
 
 [tool.mypy]
 ignore_missing_imports = true
@@ -55,7 +55,7 @@ python_version = "3.11"
 
 [[tool.mypy.overrides]]
 follow_imports = "silent"
-module = "aiosqlite.tests.perf"
+module = "tests.perf"
 
 [tool.ruff.lint]
 select = [
