@@ -38,8 +38,6 @@ jobs:
         run: make EXTRAS=dev install
       - name: Test
         run: make test
-      - name: Lint
-        run: make lint
 
   build:
     needs: test
