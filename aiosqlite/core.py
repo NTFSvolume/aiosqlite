@@ -253,6 +253,10 @@ class Connection:
         with contextlib.closing(self._conn.execute(sql, parameters)) as cursor:
             return cursor.fetchall()
 
+    def _execute_fetchone(self, sql: str, parameters: Parameters) -> sqlite3.Row | None:
+        with contextlib.closing(self._conn.execute(sql, parameters)) as cursor:
+            return cursor.fetchone()
+
     @contextmanager
     async def cursor(self) -> Cursor:
         """Create an aiosqlite cursor wrapping a sqlite3 cursor object."""
@@ -291,6 +295,14 @@ class Connection:
         if parameters is None:
             parameters = ()
         return await self._execute(self._execute_fetchall, sql, parameters)
+
+    @contextmanager
+    async def execute_fetchone(
+        self, sql: str, parameters: Parameters | None = None
+    ) -> sqlite3.Row | None:
+        if parameters is None:
+            parameters = ()
+        return await self._execute(self._execute_fetchone, sql, parameters)
 
     @contextmanager
     async def executemany(self, sql: str, parameters: Iterable[Parameters]) -> Cursor:
