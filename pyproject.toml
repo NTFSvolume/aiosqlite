@@ -17,7 +17,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Topic :: Software Development :: Libraries",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 
 [project.optional-dependencies]
 dev = [
@@ -38,8 +38,7 @@ docs = [
 ]
 
 [project.urls]
-Documentation = "https://aiosqlite.omnilib.dev"
-Github = "https://github.com/omnilib/aiosqlite"
+Github = "https://github.com/NTFSvolume/aiosqlite"
 
 [tool.flit.sdist]
 exclude = [
@@ -66,7 +65,7 @@ skip_covered = true
 
 [tool.mypy]
 ignore_missing_imports = true
-python_version = "3.9"
+python_version = "3.11"
 
 [[tool.mypy.overrides]]
 module = "aiosqlite.tests.perf"
