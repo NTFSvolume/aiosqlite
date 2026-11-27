@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import aiosqlite
 from aiosqlite import core
+
 from .helpers import setup_logger
 
 
@@ -230,17 +231,16 @@ class SmokeTest(IsolatedAsyncioTestCase):
             self.assertEqual(len(rows), 2)
 
     async def test_context_cursor(self):
-        async with aiosqlite.connect(self.db) as db:
-            async with db.cursor() as cursor:
-                await cursor.execute(
-                    "create table context_cursor "
-                    "(i integer primary key asc, k integer)"
-                )
-                await cursor.executemany(
-                    "insert into context_cursor (k) values (?)",
-                    [[i] for i in range(10)],
-                )
-                await db.commit()
+        async with aiosqlite.connect(self.db) as db, db.cursor() as cursor:
+            await cursor.execute(
+                "create table context_cursor "
+                "(i integer primary key asc, k integer)"
+            )
+            await cursor.executemany(
+                "insert into context_cursor (k) values (?)",
+                [[i] for i in range(10)],
+            )
+            await db.commit()
 
         async with aiosqlite.connect(self.db) as db:
             async with db.execute("select * from context_cursor") as cursor:
@@ -327,10 +327,9 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 self.assertEqual(row["d"], b"hi")
 
     async def test_cursor_connection(self):
-        async with aiosqlite.connect(self.db) as db:
-            async with db.cursor() as cursor:
-                self.assertIs(cursor.connection, db)
-                await cursor.connection.commit()
+        async with aiosqlite.connect(self.db) as db, db.cursor() as cursor:
+            self.assertIs(cursor.connection, db)
+            await cursor.connection.commit()
 
     async def test_fetch_all(self):
         async with aiosqlite.connect(self.db) as db:
