@@ -41,7 +41,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
             rows = await cursor.fetchall()
             self.assertEqual(rows, [(1, 2)])
 
-        await db.close()
+        await db.aclose()
 
     async def test_connection_context(self):
         async with aiosqlite.connect(self.db) as db:
@@ -693,7 +693,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
         db = await aiosqlite.connect(self.db)
 
         cursor = await db.execute("select 1, 2")
-        await db.close()
+        await db.aclose()
         with self.assertRaisesRegex(ValueError, "Connection closed"):
             await cursor.fetchall()
         with self.assertRaisesRegex(ValueError, "Connection closed"):
@@ -706,7 +706,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
         tasks = []
         for i in range(100):
             if i == 50:
-                tasks.append(asyncio.ensure_future(db.close()))
+                tasks.append(asyncio.ensure_future(db.aclose()))
             tasks.append(asyncio.ensure_future(cursor.fetchall()))
         for task in tasks:
             try:
@@ -721,14 +721,14 @@ class SmokeTest(IsolatedAsyncioTestCase):
         for i in range(1000):
             await db.execute(f"select 1, {i}")
         # Wait for all transactions to complete
-        await db.close()
+        await db.aclose()
         # Check no more transaction pending
         self.assertEqual(db._tx.empty(), True)
 
     async def test_concurrent_close(self):
         db = await aiosqlite.connect(self.db)
 
-        await asyncio.wait_for(asyncio.gather(db.close(), db.close()), timeout=1)
+        await asyncio.wait_for(asyncio.gather(db.aclose(), db.aclose()), timeout=1)
 
         self.assertFalse(db._running)
         self.assertIsNone(db._connection)
@@ -736,10 +736,10 @@ class SmokeTest(IsolatedAsyncioTestCase):
     async def test_close_twice(self):
         db = await aiosqlite.connect(self.db)
 
-        await db.close()
+        await db.aclose()
 
         # no error
-        await db.close()
+        await db.aclose()
 
     async def test_backup_aiosqlite(self):
         def progress(a, b, c):
