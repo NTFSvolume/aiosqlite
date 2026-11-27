@@ -13,7 +13,7 @@ from functools import partial
 from pathlib import Path
 from queue import Empty, Queue, SimpleQueue
 from threading import Thread
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Callable, Literal, Optional, TypeAlias, Union
 from warnings import warn
 
 from .context import contextmanager
@@ -27,6 +27,9 @@ LOG = logging.getLogger("aiosqlite")
 
 
 IsolationLevel = Optional[Literal["DEFERRED", "IMMEDIATE", "EXCLUSIVE"]]
+_RowFactoryOptions: TypeAlias = (
+    type[sqlite3.Row] | Callable[[sqlite3.Cursor, tuple[Any, ...]], object] | None
+)
 
 
 def set_result(fut: asyncio.Future, result: Any) -> None:
@@ -321,11 +324,11 @@ class Connection:
         self._conn.isolation_level = value
 
     @property
-    def row_factory(self) -> Optional[type]:
+    def row_factory(self) -> _RowFactoryOptions:
         return self._conn.row_factory
 
     @row_factory.setter
-    def row_factory(self, factory: Optional[type]) -> None:
+    def row_factory(self, factory: _RowFactoryOptions) -> None:
         self._conn.row_factory = factory
 
     @property

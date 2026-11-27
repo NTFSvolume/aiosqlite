@@ -12,11 +12,12 @@ import time
 from unittest import IsolatedAsyncioTestCase as TestCase
 
 import aiosqlite
+
 from .smoke import setup_logger
 
 TEST_DB = ":memory:"
 TARGET = 2.0
-RESULTS = {}
+RESULTS: dict[str, tuple[int, float]] = {}
 
 
 def timed(fn, name=None):
