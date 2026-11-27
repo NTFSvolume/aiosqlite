@@ -1,24 +1,19 @@
 PKG:=aiosqlite
-EXTRAS:=dev
-
-UV:=$(shell uv --version)
-VENV:=uv venv
-PIP:=uv pip
 
 install:
-	$(PIP) install -Ue .[$(EXTRAS)]
+	uv sync --locked --all-extras
 
 .venv:
-	$(VENV) .venv
+	uv venv .venv
 
 venv: .venv
 	source .venv/bin/activate && make install
 	echo 'run `source .venv/bin/activate` to activate virtualenv'
 
 test:
-	python -m coverage run -m $(PKG).tests
-	python -m coverage report
-	python -m mypy -p $(PKG)
+	uv run coverage run -m $(PKG).tests
+	uv run coverage report
+	uv run mypy -p $(PKG)
 
 lint:
 	uv run ruff check $(PKG)
@@ -28,4 +23,4 @@ format:
 	uv run format $(PKG)
 
 perf:
-	python -m unittest -v $(PKG).tests.perf
+	uv run python -m unittest -v $(PKG).tests.perf
