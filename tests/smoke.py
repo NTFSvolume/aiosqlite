@@ -440,10 +440,8 @@ class SmokeTest(IsolatedAsyncioTestCase):
             with self.assertRaises(sqlite3.DatabaseError):
                 await db.execute("DROP TABLE test_drop")
 
-            if sys.version_info >= (3, 11):
-                # Disabling the authorizer re-enables DROP
-                await db.set_authorizer(None)
-                await db.execute("DROP TABLE test_drop")
+            await db.set_authorizer(None)
+            await db.execute("DROP TABLE test_drop")
 
     async def test_set_authorizer_exception_propagation(self):
         """Test that exceptions raised in authorizer callback are caught by SQLite"""

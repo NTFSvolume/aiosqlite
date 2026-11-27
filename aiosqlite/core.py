@@ -15,7 +15,7 @@ from functools import partial
 from pathlib import Path
 from queue import Empty, Queue, SimpleQueue
 from threading import Thread
-from typing import Any, Literal, Optional, TypeAlias
+from typing import Any, Literal, Optional, Self, TypeAlias
 from warnings import warn
 
 from .context import contextmanager
@@ -183,12 +183,12 @@ class Connection:
 
         return await future
 
-    async def _connect(self) -> Connection:
+    async def _connect(self) -> Self:
         """Connect to the actual sqlite database."""
         if self._connection is None:
             try:
 
-                def connector():
+                def connector() -> None:
                     # Keep ownership on the worker even if the awaiting task is cancelled.
                     self._connection = self._connector()
 
@@ -201,11 +201,11 @@ class Connection:
 
         return self
 
-    def __await__(self) -> Generator[Any, None, Connection]:
+    def __await__(self) -> Generator[Any, None, Self]:
         self._thread.start()
         return self._connect().__await__()
 
-    async def __aenter__(self) -> Connection:
+    async def __aenter__(self) -> Self:
         return await self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
