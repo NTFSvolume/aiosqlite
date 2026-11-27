@@ -8,8 +8,8 @@ You can do this with [pyenv][]:
 
     $ pyenv install <version>
     $ pyenv local <version>
-    
-    
+
+
 ## Setup
 
 Once cloned, create a clean virtual environment and
@@ -36,8 +36,8 @@ validate your type annotations, and ensure your code
 meets the appropriate style and linting rules:
 
     $ make test lint
-    
-    
+
+
 ## Submitting
 
 Before submitting a pull request, please ensure

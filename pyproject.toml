@@ -71,6 +71,7 @@ ignore = [
     "D",  # Documentation
     "E501",  # suppress line-too-long, let formatter decide
     "EM",  # flake8-errmsg
+    "FBT",  # boolean trap
     "FIX002",  # line-contains-todo
     "FLY002",  # static-join-to-f-string
     "G004",  # logging-f-string
@@ -78,6 +79,7 @@ ignore = [
     "PLC0415",  # import-outside-top-level
     "PLR2004",  # magic-value-comparison
     "PLW2901",  # redefined-loop-name
+    "PT",  # pytest
     "RET503",  # implicit-return
     "S101",  # assert
     "S110",  # try-except-pass
@@ -86,6 +88,7 @@ ignore = [
     "S607",  # start-process-with-partial-path
     "SIM105",  # suppressible-exception
     "SLF001",  # private-member-access
+    "T201",  # print
     "TD",  # flake8-todos
     "TRY003",  # raise-vanilla-args
     "TRY400"  # error-instead-of-exception

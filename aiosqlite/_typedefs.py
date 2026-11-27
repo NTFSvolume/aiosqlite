@@ -27,7 +27,7 @@ RowFactoryOptions: TypeAlias = (
 IsolationLevel = Literal["DEFERRED", "IMMEDIATE", "EXCLUSIVE"] | None
 
 
-class _ConnectionParams_P3_11(TypedDict, total=False):
+class _ConnectionParamsP311(TypedDict, total=False):
     timeout: float
     detect_types: int
     isolation_level: IsolationLevel
@@ -39,8 +39,8 @@ class _ConnectionParams_P3_11(TypedDict, total=False):
 
 if sys.version_info >= (3, 12):
 
-    class ConnectionParams(_ConnectionParams_P3_11, total=False):
+    class ConnectionParams(_ConnectionParamsP311, total=False):
         autocommit: bool
 
 else:
-    ConnectionParams = _ConnectionParams_P3_11
+    ConnectionParams = _ConnectionParamsP311

@@ -2,15 +2,15 @@
 # Licensed under the MIT license
 from __future__ import annotations
 
-import sqlite3
-from collections.abc import AsyncIterator, Callable, Iterable
 from typing import TYPE_CHECKING, ParamSpec, Self, TypeVar
 
 from typing_extensions import deprecated
 
-from ._typedefs import Parameters, RowFactoryOptions
-
 if TYPE_CHECKING:
+    import sqlite3
+    from collections.abc import AsyncIterator, Callable, Iterable
+
+    from ._typedefs import Parameters, RowFactoryOptions
     from .core import Connection
 
 _T = TypeVar("_T")

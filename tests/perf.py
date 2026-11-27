@@ -124,7 +124,7 @@ class PerfTest(TestCase):
 
     @timed
     async def test_inserts_authorized(self):
-        def deny_drops(action_code, arg1, arg2, db_name, trigger_name):
+        def deny_drops(action_code, *_, **_kwargs):
             if action_code == sqlite3.SQLITE_DROP_TABLE:
                 return sqlite3.SQLITE_DENY
             return sqlite3.SQLITE_OK
