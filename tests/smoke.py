@@ -41,7 +41,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
             rows = await cursor.fetchall()
             self.assertEqual(rows, [(1, 2)])
 
-        await db.close()
+        await db.aclose()
 
     async def test_connection_context(self):
         async with aiosqlite.connect(self.db) as db:
@@ -120,9 +120,9 @@ class SmokeTest(IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "no active connection"):
             await db.execute("select 1")
 
-    async def test_connection_context_closed_inside(self):
+    async def test_connection_context_closed_inside(self) -> None:
         async with aiosqlite.connect(self.db) as db:
-            await db.close()
+            await db.aclose()
 
     async def test_connection_locations(self):
         TEST_DB = self.db.as_posix()
@@ -187,7 +187,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
 
         assert len(rows) == 10
 
-    async def test_iterable_cursor(self):
+    async def test_iterable_cursor(self) -> None:
         async with aiosqlite.connect(self.db) as db:
             cursor = await db.cursor()
             await cursor.execute(
@@ -201,9 +201,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
 
         async with aiosqlite.connect(self.db) as db:
             cursor = await db.execute("select * from iterable_cursor")
-            rows = []
-            async for row in cursor:
-                rows.append(row)
+            rows = [row async for row in cursor]
 
         assert len(rows) == 10
 
@@ -241,7 +239,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
         for rows in results.values():
             self.assertEqual(len(rows), 2)
 
-    async def test_context_cursor(self):
+    async def test_context_cursor(self) -> None:
         async with aiosqlite.connect(self.db) as db, db.cursor() as cursor:
             await cursor.execute(
                 "create table context_cursor (i integer primary key asc, k integer)",
@@ -256,9 +254,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
             aiosqlite.connect(self.db) as db,
             db.execute("select * from context_cursor") as cursor,
         ):
-            rows = []
-            async for row in cursor:
-                rows.append(row)
+            rows = [row async for row in cursor]
 
         assert len(rows) == 10
 
@@ -437,7 +433,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
     async def test_set_authorizer_deny_drops(self):
         """Test authorizer that denies DROP operations"""
 
-        def deny_drops(action_code, arg1, arg2, db_name, trigger_name):
+        def deny_drops(action_code, *_, **_kwargs):
             if action_code == sqlite3.SQLITE_DROP_TABLE:
                 return sqlite3.SQLITE_DENY
             return sqlite3.SQLITE_OK
@@ -460,7 +456,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
     async def test_set_authorizer_exception_propagation(self):
         """Test that exceptions raised in authorizer callback are caught by SQLite"""
 
-        def raise_exception(action_code, arg1, arg2, db_name, trigger_name):
+        def raise_exception(*_, **_kwargs):
             raise ValueError("Test exception from authorizer")
 
         async with aiosqlite.connect(self.db) as db:
@@ -697,7 +693,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
         db = await aiosqlite.connect(self.db)
 
         cursor = await db.execute("select 1, 2")
-        await db.close()
+        await db.aclose()
         with self.assertRaisesRegex(ValueError, "Connection closed"):
             await cursor.fetchall()
         with self.assertRaisesRegex(ValueError, "Connection closed"):
@@ -710,7 +706,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
         tasks = []
         for i in range(100):
             if i == 50:
-                tasks.append(asyncio.ensure_future(db.close()))
+                tasks.append(asyncio.ensure_future(db.aclose()))
             tasks.append(asyncio.ensure_future(cursor.fetchall()))
         for task in tasks:
             try:
@@ -725,14 +721,14 @@ class SmokeTest(IsolatedAsyncioTestCase):
         for i in range(1000):
             await db.execute(f"select 1, {i}")
         # Wait for all transactions to complete
-        await db.close()
+        await db.aclose()
         # Check no more transaction pending
         self.assertEqual(db._tx.empty(), True)
 
     async def test_concurrent_close(self):
         db = await aiosqlite.connect(self.db)
 
-        await asyncio.wait_for(asyncio.gather(db.close(), db.close()), timeout=1)
+        await asyncio.wait_for(asyncio.gather(db.aclose(), db.aclose()), timeout=1)
 
         self.assertFalse(db._running)
         self.assertIsNone(db._connection)
@@ -740,10 +736,10 @@ class SmokeTest(IsolatedAsyncioTestCase):
     async def test_close_twice(self):
         db = await aiosqlite.connect(self.db)
 
-        await db.close()
+        await db.aclose()
 
         # no error
-        await db.close()
+        await db.aclose()
 
     async def test_backup_aiosqlite(self):
         def progress(a, b, c):

@@ -15,15 +15,23 @@ from collections.abc import AsyncIterator, Callable, Generator, Iterable
 from functools import partial
 from queue import Empty, Queue, SimpleQueue
 from threading import Thread
-from types import TracebackType
-from typing import Any, ParamSpec, Self, TypeVar, TypeVarTuple, Unpack
+from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, TypeVarTuple, Unpack
 from warnings import warn
 
 from typing_extensions import Sentinel, deprecated
 
-from ._typedefs import ConnectionParams, IsolationLevel, Parameters, RowFactoryOptions
 from .context import contextmanager
 from .cursor import Cursor
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+    from ._typedefs import (
+        ConnectionParams,
+        IsolationLevel,
+        Parameters,
+        RowFactoryOptions,
+    )
 
 __all__ = ["Connection", "Cursor", "connect"]
 
@@ -74,7 +82,7 @@ def _execute(future: asyncio.Future | None, function: Callable[[], Any]) -> bool
     LOG.debug("executing %s", function)
     try:
         result = function()
-    except BaseException as e:  # noqa B036
+    except BaseException as e:  # noqa: BLE001
         LOG.debug("returning exception %s", e)
         if future is not None:
             _call_soon_threadsafe(future.get_loop(), _set_exception, future, e)
@@ -123,6 +131,7 @@ class Connection:
             warn(
                 "aiosqlite.Connection no longer uses the `loop` parameter",
                 DeprecationWarning,
+                stacklevel=2,
             )
 
     def __repr__(self) -> str:
@@ -516,13 +525,18 @@ def connect(
         warn(
             "aiosqlite.connect() no longer uses the `loop` parameter",
             DeprecationWarning,
+            stacklevel=2,
         )
 
     def connector() -> sqlite3.Connection:
         try:
             loc = os.fspath(database)
         except TypeError as e:
-            warn(f"{e}. Casting as as string", UserWarning)
+            warn(
+                f"{e}. Casting as as string",
+                UserWarning,
+                stacklevel=2,
+            )
             loc = str(database)
         else:
             if isinstance(loc, bytes):

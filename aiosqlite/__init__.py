@@ -12,7 +12,7 @@ from sqlite3 import (
     OperationalError,
     ProgrammingError,
     Row,
-    Warning,
+    Warning,  # noqa: A004
     paramstyle,
     register_adapter,
     register_converter,
