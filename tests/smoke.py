@@ -3,13 +3,14 @@
 
 import asyncio
 import contextlib
+import itertools
 import sqlite3
 import sys
 from collections.abc import Iterable
 from pathlib import Path
 from sqlite3 import OperationalError
 from tempfile import TemporaryDirectory
-from threading import Event, Thread
+from threading import Event, Thread, get_ident
 from typing import Any
 from unittest import IsolatedAsyncioTestCase, SkipTest
 from unittest.mock import patch
@@ -812,3 +813,92 @@ class SmokeTest(IsolatedAsyncioTestCase):
         loop.close()
 
         db.stop()
+
+    async def test_execute_fetchall_closes_native_cursor(self) -> None:
+        events = []
+        cursors = []
+
+        class FetchError(ValueError):
+            pass
+
+        class CloseError(sqlite3.OperationalError):
+            pass
+
+        class NativeCursor(sqlite3.Cursor):
+            def fetchall(self):
+                events.append(("fetch", get_ident()))
+                if fetch_error:
+                    raise FetchError("fetch failed")
+                return super().fetchall()
+
+            def close(self):
+                events.append(("close", get_ident()))
+                super().close()
+                if close_error:
+                    raise CloseError("close failed")
+
+        class NativeConnection(sqlite3.Connection):
+            def execute(self, sql, parameters=()):
+                events.append(("execute", get_ident()))
+                cursor = self.cursor(factory=NativeCursor)
+                cursors.append(cursor)
+                return cursor.execute(sql, parameters)
+
+        async with aiosqlite.connect(":memory:", factory=NativeConnection) as db:
+            for fetch_error, close_error in itertools.product([False, True], repeat=2):
+                with self.subTest(fetch_error=fetch_error, close_error=close_error):
+                    events.clear()
+                    if fetch_error or close_error:
+                        error = CloseError if close_error else FetchError
+                        with self.assertRaises(error) as raised:
+                            await db.execute_fetchall("SELECT ?", (7,))
+
+                        if fetch_error and close_error:
+                            self.assertIsInstance(
+                                raised.exception.__context__, FetchError
+                            )
+                    else:
+                        async with db.execute_fetchall("SELECT ?", (7,)) as rows:
+                            self.assertEqual(rows, [(7,)])
+                    self.assertEqual(
+                        [name for name, _ in events], ["execute", "fetch", "close"]
+                    )
+                    self.assertEqual(len({thread for _, thread in events}), 1)
+                    self.assertNotEqual(events[0][1], get_ident())
+
+    async def test_execute_fetchall_closes_native_cursor_after_cancellation(self):
+        loop = asyncio.get_running_loop()
+        fetching = asyncio.Event()
+        release = Event()
+        events = []
+
+        class NativeCursor(sqlite3.Cursor):
+            def fetchall(self):
+                loop.call_soon_threadsafe(fetching.set)
+                if not release.wait(5):
+                    raise TimeoutError("fetch was not released")
+                return super().fetchall()
+
+            def close(self):
+                events.append("close")
+                super().close()
+
+        class NativeConnection(sqlite3.Connection):
+            def execute(self, sql, parameters=()):
+                return self.cursor(factory=NativeCursor).execute(sql, parameters)
+
+            def commit(self):
+                events.append("commit")
+                super().commit()
+
+        async with aiosqlite.connect(":memory:", factory=NativeConnection) as db:
+            task = asyncio.ensure_future(db.execute_fetchall("SELECT 7"))
+            try:
+                await asyncio.wait_for(fetching.wait(), 5)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+            finally:
+                release.set()
+            await db.commit()
+            self.assertEqual(events, ["close", "commit"])
