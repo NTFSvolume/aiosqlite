@@ -1,46 +1,42 @@
-[build-system]
-build-backend = "uv_build"
-requires = ["uv_build>=0.13.5,<0.14.0"]
-
 [project]
 name = "aiosqlite"
-readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
-maintainers = [{name = "NTFSvolume", email = "NTFSvolume@proton.me"}]
 version = "0.22.1"
 authors = [
-    {name="Amethyst Reese", email="amethyst@n7.gg"},
+    {name = "Amethyst Reese", email = "amethyst@n7.gg"}
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
-    "Topic :: Software Development :: Libraries",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: 3.15"
+    "Programming Language :: Python :: 3.15",
+    "Topic :: Software Development :: Libraries"
 ]
+license = "MIT"
+license-files = ["LICENSE"]
+maintainers = [{name = "NTFSvolume", email = "NTFSvolume@proton.me"}]
+readme = "README.md"
 requires-python = ">=3.11"
-
-[dependency-groups]
-dev = [
-    "coverage>=7.17.5",
-    "ruff>=0.17.4,<0.18.0",
-    "mypy>=2.4.1",
-]
 
 [project.urls]
 Github = "https://github.com/NTFSvolume/aiosqlite"
 
-[tool.coverage.run]
-branch = true
-include = ["aiosqlite/*"]
-omit = ["aiosqlite/tests/*"]
+[build-system]
+build-backend = "uv_build"
+requires = ["uv_build>=0.13.5,<0.14.0"]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.17.5",
+    "mypy>=2.4.1",
+    "prek>=0.5.7",
+    "ruff>=0.17.4,<0.18.0"
+]
 
 [tool.coverage.report]
 fail_under = 75
@@ -48,13 +44,60 @@ precision = 1
 show_missing = true
 skip_covered = true
 
+[tool.coverage.run]
+branch = true
+include = ["aiosqlite/*"]
+omit = ["aiosqlite/tests/*"]
+
 [tool.mypy]
 ignore_missing_imports = true
 python_version = "3.11"
 
 [[tool.mypy.overrides]]
-module = "aiosqlite.tests.perf"
 follow_imports = "silent"
+module = "aiosqlite.tests.perf"
+
+[tool.ruff.lint]
+select = [
+    "ALL"
+]
+extend-safe-fixes = [
+    "TC"  # move import from and to TYPE_CHECKING blocks
+]
+ignore = [
+    "ANN",  # flake8-annotations
+    "COM812",  # missing-trailing-comma
+    "CPY001",  # Missing copyright notice at top of file
+    "D",  # Documentation
+    "E501",  # suppress line-too-long, let formatter decide
+    "EM",  # flake8-errmsg
+    "FIX002",  # line-contains-todo
+    "FLY002",  # static-join-to-f-string
+    "G004",  # logging-f-string
+    "N806",  # uppercase variables in functions
+    "PLC0415",  # import-outside-top-level
+    "PLR2004",  # magic-value-comparison
+    "PLW2901",  # redefined-loop-name
+    "RET503",  # implicit-return
+    "S101",  # assert
+    "S110",  # try-except-pass
+    "S311",  # suspicious-non-cryptographic-random-usage
+    "S603",  # subprocess-without-shell-equals-true
+    "S607",  # start-process-with-partial-path
+    "SIM105",  # suppressible-exception
+    "SLF001",  # private-member-access
+    "TD",  # flake8-todos
+    "TRY003",  # raise-vanilla-args
+    "TRY400"  # error-instead-of-exception
+]
+
+[tool.tomlsort]
+all = true
+ignore_case = true
+in_place = true
+sort_first = ["name", "project", "select", "version"]
+spaces_before_inline_comment = 2
+spaces_indent_inline_array = 4
 
 [tool.uv]
 default-groups = "all"
