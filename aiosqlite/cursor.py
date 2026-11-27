@@ -1,12 +1,13 @@
 # Copyright Amethyst Reese
 # Licensed under the MIT license
+from __future__ import annotations
 
 import sqlite3
 from collections.abc import AsyncIterator, Iterable
-from typing import Any, Callable, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from .core import Connection
+    from .core import Connection, _RowFactoryOptions
 
 
 class Cursor:
@@ -92,7 +93,7 @@ class Cursor:
         return self._cursor.description
 
     @property
-    def row_factory(self) -> Optional[Callable[[sqlite3.Cursor, sqlite3.Row], object]]:
+    def row_factory(self) -> _RowFactoryOptions:
         return self._cursor.row_factory
 
     @row_factory.setter
