@@ -11,7 +11,7 @@ venv: .venv
 	echo 'run `source .venv/bin/activate` to activate virtualenv'
 
 test:
-	uv run coverage run -m $(PKG).tests
+	uv run coverage run -m tests
 	uv run coverage report
 	uv run mypy -p $(PKG)
 
@@ -23,4 +23,4 @@ format:
 	uv run format $(PKG)
 
 perf:
-	uv run python -m unittest -v $(PKG).tests.perf
+	uv run python -m unittest -v tests.perf
