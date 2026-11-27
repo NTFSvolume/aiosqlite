@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import logging
 import os
 import sqlite3
@@ -51,7 +52,8 @@ def _set_exception(fut: asyncio.Future, e: BaseException) -> None:
 
 
 _STOP_RUNNING_SENTINEL = Sentinel("_STOP_RUNNING_SENTINEL")
-_TxQueue = SimpleQueue[tuple[asyncio.Future | None, Callable[[], Any]]]
+_Msg = tuple[asyncio.Future | None, Callable[[], Any], contextvars.Context]
+_TxQueue = SimpleQueue[_Msg]
 _Ts = TypeVarTuple("_Ts")
 
 
@@ -68,6 +70,22 @@ def _call_soon_threadsafe(
             raise
 
 
+def _execute(future: asyncio.Future | None, function: Callable[[], Any]) -> bool:
+    LOG.debug("executing %s", function)
+    try:
+        result = function()
+    except BaseException as e:  # noqa B036
+        LOG.debug("returning exception %s", e)
+        if future is not None:
+            _call_soon_threadsafe(future.get_loop(), _set_exception, future, e)
+        return False
+    else:
+        LOG.debug("operation %s completed", function)
+        if future is not None:
+            _call_soon_threadsafe(future.get_loop(), _set_result, future, result)
+        return result is _STOP_RUNNING_SENTINEL
+
+
 def _connection_worker_thread(tx: _TxQueue) -> None:
     """Execute function calls on a separate thread.
 
@@ -78,27 +96,13 @@ def _connection_worker_thread(tx: _TxQueue) -> None:
         # even after connection is closed (so we can finalize all
         # futures)
 
-        future, function = tx.get()
-
+        future, function, ctx = tx.get()
         try:
-            LOG.debug("executing %s", function)
-            try:
-                result = function()
-                LOG.debug("operation %s completed", function)
-            finally:
-                # Do not retain a connection while the worker waits for its next item.
-                del function
-
-            if future:
-                _call_soon_threadsafe(future.get_loop(), _set_result, future, result)
-
-            if result is _STOP_RUNNING_SENTINEL:
+            if ctx.run(_execute, future, function):
                 break
-
-        except BaseException as e:  # noqa B036
-            LOG.debug("returning exception %s", e)
-            if future:
-                _call_soon_threadsafe(future.get_loop(), _set_exception, future, e)
+        finally:
+            # Do not retain request-local values while waiting for the next item.
+            del ctx, function, future
 
 
 class Connection:
@@ -161,7 +165,7 @@ class Connection:
         except Exception:  # noqa: BLE001
             future = None
 
-        self._tx.put_nowait((future, close_and_stop))
+        self._tx.put_nowait((future, close_and_stop, contextvars.copy_context()))
         return future
 
     @deprecated(
@@ -179,7 +183,7 @@ class Connection:
                 self._connection = self._connector()
 
             future = asyncio.get_event_loop().create_future()
-            self._tx.put_nowait((future, connector))
+            self._tx.put_nowait((future, connector, contextvars.copy_context()))
 
             try:
                 self._thread.start()
@@ -238,7 +242,7 @@ class Connection:
 
         function = partial(fn, *args, **kwargs)
         future = asyncio.get_event_loop().create_future()
-        self._tx.put_nowait((future, function))
+        self._tx.put_nowait((future, function, contextvars.copy_context()))
         return await future
 
     def _execute_insert(self, sql: str, parameters: Parameters) -> sqlite3.Row | None:
