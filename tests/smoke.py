@@ -77,7 +77,9 @@ class SmokeTest(IsolatedAsyncioTestCase):
                         [(42,)],
                     )
                 check.close()
-                with self.assertRaisesRegex(ValueError, "no active connection"):
+                with self.assertRaisesRegex(
+                    sqlite3.ProgrammingError, "no active connection"
+                ):
                     await db.execute("select 1")
 
     async def test_connection_context_rolls_back(self):
@@ -97,7 +99,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
                 [],
             )
 
-        with self.assertRaisesRegex(ValueError, "no active connection"):
+        with self.assertRaisesRegex(sqlite3.ProgrammingError, "no active connection"):
             await db.execute("select 1")
 
     async def test_connection_context_failed_commit(self):
@@ -117,7 +119,7 @@ class SmokeTest(IsolatedAsyncioTestCase):
         with contextlib.closing(sqlite3.connect(self.db)) as check, check:
             self.assertEqual(check.execute("select * from child").fetchall(), [])
 
-        with self.assertRaisesRegex(ValueError, "no active connection"):
+        with self.assertRaisesRegex(sqlite3.ProgrammingError, "no active connection"):
             await db.execute("select 1")
 
     async def test_connection_context_closed_inside(self) -> None:
@@ -694,9 +696,9 @@ class SmokeTest(IsolatedAsyncioTestCase):
 
         cursor = await db.execute("select 1, 2")
         await db.aclose()
-        with self.assertRaisesRegex(ValueError, "Connection closed"):
+        with self.assertRaisesRegex(sqlite3.ProgrammingError, "Connection closed"):
             await cursor.fetchall()
-        with self.assertRaisesRegex(ValueError, "Connection closed"):
+        with self.assertRaisesRegex(sqlite3.ProgrammingError, "Connection closed"):
             await cursor.fetchall()
 
     async def test_cursor_on_closed_connection_loop(self):
