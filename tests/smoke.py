@@ -992,3 +992,19 @@ class SmokeTest(IsolatedAsyncioTestCase):
         assert future is not None
         await future
         self.assertEqual(observed, ["stopping"])
+
+    async def test_set_isolation_level(self):
+        async with aiosqlite.connect(":memory:") as db:
+            db.isolation_level = "IMMEDIATE"
+
+            self.assertEqual(db.isolation_level, "IMMEDIATE")
+
+            await db.execute("CREATE TABLE test (id INTEGER)")
+            await db.execute("INSERT INTO test (id) VALUES (1)")
+            await db.commit()
+
+            async with db.execute("SELECT COUNT(*) FROM test") as cursor:
+                row = await cursor.fetchone()
+                assert row is not None
+
+        self.assertEqual(row[0], 1)

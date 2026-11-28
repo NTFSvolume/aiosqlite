@@ -8,8 +8,6 @@ from collections.abc import Callable, Coroutine, Generator
 from contextlib import AbstractAsyncContextManager
 from typing import Any, ParamSpec, TypeVar
 
-from .cursor import Cursor
-
 _T = TypeVar("_T")
 _P = ParamSpec("_P")
 
@@ -38,8 +36,8 @@ class Result(AbstractAsyncContextManager[_T], Coroutine[Any, Any, _T]):
         return self._obj
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        if isinstance(self._obj, Cursor):
-            await self._obj.aclose()
+        if callable(aclose := getattr(self._obj, "aclose", None)):
+            await aclose()  # pyright: ignore[reportGeneralTypeIssues]
 
 
 def contextmanager(

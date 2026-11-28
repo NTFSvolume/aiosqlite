@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import dataclasses
 import logging
 import os
 import sqlite3
@@ -105,6 +106,13 @@ def _connection_worker_thread(tx: _TxQueue) -> None:
             del ctx, function, future
 
 
+@dataclasses.dataclass(slots=True, kw_only=True)
+class ConnectionCache:
+    isolation_level: IsolationLevel
+    row_factory: RowFactoryOptions
+    text_factory: Callable[[bytes], Any]
+
+
 class Connection:
     def __init__(
         self,
@@ -118,6 +126,7 @@ class Connection:
         self._tx: _TxQueue = SimpleQueue()
         self._iter_chunk_size = iter_chunk_size
         self._thread = Thread(target=_connection_worker_thread, args=(self._tx,))
+        self._cache: ConnectionCache
 
         if loop is not None:
             warn(
@@ -149,6 +158,15 @@ class Connection:
         # be finalized by its own __del__.
         self.stop()
 
+    def _open(self) -> None:
+        # Keep ownership on the worker even if the awaiting task is cancelled.
+        self._connection = c = self._connector()
+        self._cache = ConnectionCache(
+            isolation_level=c.isolation_level,
+            row_factory=c.row_factory,
+            text_factory=c.text_factory,
+        )
+
     def stop(self) -> asyncio.Future | None:
         """Stop the background thread. Prefer `async with` or `await close()`"""
         if not self._running:
@@ -178,13 +196,8 @@ class Connection:
     async def __aenter__(self) -> Self:
         """Connect to the actual sqlite database."""
         if self._connection is None:
-
-            def connector() -> None:
-                # Keep ownership on the worker even if the awaiting task is cancelled.
-                self._connection = self._connector()
-
             future = asyncio.get_event_loop().create_future()
-            self._tx.put_nowait((future, connector, contextvars.copy_context()))
+            self._tx.put_nowait((future, self._open, contextvars.copy_context()))
 
             try:
                 self._thread.start()
@@ -234,9 +247,20 @@ class Connection:
 
         return self._connection
 
+    def _get_cache(self) -> ConnectionCache:
+        _ = self._conn
+        return self._cache
+
     async def _execute(
         self, fn: Callable[_P, _T], *args: _P.args, **kwargs: _P.kwargs
     ) -> _T:
+        """Queue a function with the given arguments for execution."""
+        # This just wraps the future into a corotine to force the caller to await it
+        return await self._create_future(fn, *args, **kwargs)
+
+    def _create_future(
+        self, fn: Callable[_P, _T], *args: _P.args, **kwargs: _P.kwargs
+    ) -> asyncio.Future[_T]:
         """Queue a function with the given arguments for execution."""
         if not self._running or not self._connection:
             raise ValueError("Connection closed")
@@ -244,7 +268,7 @@ class Connection:
         function = partial(fn, *args, **kwargs)
         future = asyncio.get_event_loop().create_future()
         self._tx.put_nowait((future, function, contextvars.copy_context()))
-        return await future
+        return future
 
     def _execute_insert(self, sql: str, parameters: Parameters) -> sqlite3.Row | None:
         with contextlib.closing(self._conn.execute(sql, parameters)) as cursor:
@@ -351,28 +375,43 @@ class Connection:
         return self._conn.in_transaction
 
     @property
-    def isolation_level(self) -> str | None:
-        return self._conn.isolation_level
+    def isolation_level(self) -> IsolationLevel:
+        return self._get_cache().isolation_level
 
     @isolation_level.setter
     def isolation_level(self, value: IsolationLevel) -> None:
-        self._conn.isolation_level = value
+        self._get_cache().isolation_level = value
+
+        def update():
+            self._conn.isolation_level = value
+
+        self._create_future(update)
 
     @property
     def row_factory(self) -> RowFactoryOptions:
-        return self._conn.row_factory
+        return self._get_cache().row_factory
 
     @row_factory.setter
     def row_factory(self, factory: RowFactoryOptions) -> None:
-        self._conn.row_factory = factory
+        self._get_cache().row_factory = factory
+
+        def update():
+            self._conn.row_factory = factory
+
+        self._create_future(update)
 
     @property
     def text_factory(self) -> Callable[[bytes], Any]:
-        return self._conn.text_factory
+        return self._get_cache().text_factory
 
     @text_factory.setter
     def text_factory(self, factory: Callable[[bytes], Any]) -> None:
-        self._conn.text_factory = factory
+        self._get_cache().text_factory = factory
+
+        def update():
+            self._conn.text_factory = factory
+
+        self._create_future(update)
 
     @property
     def total_changes(self) -> int:
