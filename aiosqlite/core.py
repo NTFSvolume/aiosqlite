@@ -230,7 +230,7 @@ class Connection:
     @property
     def _conn(self) -> sqlite3.Connection:
         if self._connection is None:
-            raise ValueError("no active connection")
+            raise sqlite3.ProgrammingError("no active connection")
 
         return self._connection
 
@@ -239,7 +239,7 @@ class Connection:
     ) -> _T:
         """Queue a function with the given arguments for execution."""
         if not self._running or not self._connection:
-            raise ValueError("Connection closed")
+            raise sqlite3.ProgrammingError("Connection closed")
 
         function = partial(fn, *args, **kwargs)
         future = asyncio.get_event_loop().create_future()
