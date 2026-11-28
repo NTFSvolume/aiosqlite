@@ -251,7 +251,14 @@ class Connection:
         _ = self._conn
         return self._cache
 
-    def _execute(
+    async def _execute(
+        self, fn: Callable[_P, _T], *args: _P.args, **kwargs: _P.kwargs
+    ) -> _T:
+        """Queue a function with the given arguments for execution."""
+        # This just wraps the future into a corotine to force the caller to await it
+        return await self._create_future(fn, *args, **kwargs)
+
+    def _create_future(
         self, fn: Callable[_P, _T], *args: _P.args, **kwargs: _P.kwargs
     ) -> asyncio.Future[_T]:
         """Queue a function with the given arguments for execution."""
@@ -378,7 +385,7 @@ class Connection:
         def update():
             self._conn.isolation_level = value
 
-        self._execute(update)
+        self._create_future(update)
 
     @property
     def row_factory(self) -> RowFactoryOptions:
@@ -391,7 +398,7 @@ class Connection:
         def update():
             self._conn.row_factory = factory
 
-        self._execute(update)
+        self._create_future(update)
 
     @property
     def text_factory(self) -> Callable[[bytes], Any]:
@@ -404,7 +411,7 @@ class Connection:
         def update():
             self._conn.text_factory = factory
 
-        self._execute(update)
+        self._create_future(update)
 
     @property
     def total_changes(self) -> int:
